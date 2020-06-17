@@ -28,7 +28,7 @@
 
 
 
-## 2.  Class 文件
+## 2.  class 文件
 
 ### 2.1. java代码怎么执行？
 
@@ -66,27 +66,63 @@ ClassFile {
 
 
 
-## 3. Class加载到 JVM 的过程
+## 3. class加载到 JVM 的过程
 
 Loading => Linking => Initializing
 
-### 3.1. Loading
+### 3.1. Loading(加载)
 
-加载：把class文件加载到内存。
+加载：把`class`文件加载到内存。
 
 #### 3.1.1. 类加载器
 
-双亲委派机制
+采用双亲委派机制，加载过程中从下到上查找，查找不到就从上到下寻找加载器把`class`加载到内存。
 
-Custom ClassLoader
+- Custom ClassLoader
 
-App
+  用户自定义加载器，可加载指定路径下的`class`文件。
 
-Extension
+- App ClassLoader
 
-Bootstrap
+  应用加载器，加载程序所在目录的`class`文件。
 
-### 3.2. Linking
+- Extension  ClassLoader
+
+  标准扩展库加载器，加载扩展库，如`classpath`中的`jre` ，`javax.*`或者
+  `java.ext.dir` 指定位置中的类，开发者可以直接使用标准扩展类加载器。
+
+- Bootstrap  ClassLoader
+
+  `c++`编写，加载`java`核心库 `java.*`,构造`ExtClassLoader`和`AppClassLoader`。
+
+#### 3.1.2. 实现自己的类加载器,如何破坏双亲委派机制？
+
+```java
+public class MyClassLoader extends ClassLoader{
+
+    /**
+     * 实现自己的ClassLoader
+     * 重写findClass方法，加载自己制定目录的类
+     */
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        return super.findClass(name);
+    }
+
+    /**
+     * 破坏双亲委派机制
+     * 重写loadClass方法，重写加载类的逻辑(将双亲委派机制的逻辑修改掉)
+     */
+    @Override
+    public Class<?> loadClass(String name) throws ClassNotFoundException {
+        return super.loadClass(name);
+    }
+}
+```
+
+
+
+### 3.2. Linking(链接)
 
 链接：包括Verification、Preparation、Resolution三个过程。
 
@@ -100,7 +136,7 @@ Bootstrap
 
   直接引用:可以理解为一个内存地址，或者一个偏移量。比如类方法，类变量的直接引用是指向方法区的指针；而实例方法，实例变量的直接引用则是从实例的头指针开始算起到这个实例变量位置的偏移量。
 
-### 3.3. Initializing
+### 3.3. Initializing(初始化)
 
 初始化:调用类初始化代码`init`，给静态成员变量赋初始值。
 
