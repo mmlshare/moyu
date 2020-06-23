@@ -140,31 +140,27 @@ public class MyClassLoader extends ClassLoader{
 
 初始化:调用类初始化代码`init`，给静态成员变量赋初始值。
 
+## 4. JVM 执行引擎
+
+#### 4.1. 方法调用 https://www.cnblogs.com/chenyangyao/p/5305352.html https://blog.csdn.net/know9163/article/details/80574488
+
+JVM方法调用不同于方法的执行，这里方法调用指的是如何确定需要调用的目标方法，不涉及该方法内部具体的运行过程。
+
+之前所说，所有的方法调用中的目标方法class文件中都有一个符号引用，class文件在被JVM加载的链接的解析阶段，将class中的部分`符号引用`解析成了`直接引用`，这个解析能成立的条件是：方法在还未执行前就可以预知到它的版本，并且这个方法在运行期间是不会改变的。这种可提前预知的方法包括`静态方法`和`私有方法`。前者于类直接关联绑定，后者不可被其他类访问，这决定了它们不可能通过继承或者其他方式重写。
+
+JVM中提供了5中方法调用字节码指令
+
+| 指令                |                          说明                          |
+| :------------------ | :----------------------------------------------------: |
+| **invokestatic**    |                      调用静态方法                      |
+| **invokespecial**   |                                                        |
+| **invokevirtual**   |                                                        |
+| **invokeinterface** | 调用接口方法，会在运行时期再确定一个实现此接口的对象。 |
+| **invokedynamic**   |                                                        |
 
 
 
 
-
-
-## 2. 类加载-初始化 Class Loading Linking Initializing
-
-1. 加载过程
-
-   1. Loading
-
-      把class文件加载到内存，双亲委派，主要为安全考虑
-
-   2. Linking
-   
-      1. Verification
-   
-         验证检查文件
-   
-      2. Preparation
-   
-      3. Resolution
-   
-   3. Initializing
 
 ![image-20200613194406440](C:\Users\LPSHARE\AppData\Roaming\Typora\typora-user-images\image-20200613194406440.png)
 
