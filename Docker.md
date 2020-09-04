@@ -132,6 +132,27 @@ docker run \
     gitlab/gitlab-ce
 ```
 
+## Docker下Mysql安装
+
+```shell
+#拉取镜像
+docker pull mysql
+
+#启动
+docker run --name mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=123456 -d mysql
+
+#进入容器
+docker exec -it mysql bash
+
+#登录mysql
+mysql -u root -p
+ALTER USER 'root'@'localhost' IDENTIFIED BY '123456';
+
+#添加远程登录用户
+CREATE USER 'admin'@'%' IDENTIFIED WITH mysql_native_password BY '123456';
+GRANT ALL PRIVILEGES ON *.* TO '123456'@'%';
+```
+
 
 
 ## 关闭防火墙
