@@ -93,7 +93,7 @@ docker run --name mongodb27017 -p 27017:27017 -e $PWD/db:/data/db -d mongo --aut
 #进入mongo命令行
 docker exec -it 1b7b83db9d2a mongo admin
 #创建用户
-db.createUser({ user: 'admin', pwd: 'admin123456', roles: [ { role: "userAdminAnyDatabase", db: "admin" } ] });
+db.createUser({ user:'admin',pwd:'123456',roles:[ { role:'userAdminAnyDatabase', db: 'admin'},"readWriteAnyDatabase"]});
 
 
 ```
