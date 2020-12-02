@@ -52,7 +52,7 @@ for port in `seq 6601 6606`; do
     echo "cluster-enabled yes" >>./${port}/conf/redis.conf
     echo "cluster-config-file nodes.conf" >>./${port}/conf/redis.conf
     echo "cluster-node-timeout 5000" >>./${port}/conf/redis.conf
-    echo "cluster-announce-ip 129.211.32.3" >>./${port}/conf/redis.conf
+    echo "cluster-announce-ip 127.0.0.1" >>./${port}/conf/redis.conf
     echo "cluster-announce-port ${port}" >>./${port}/conf/redis.conf
     echo "cluster-announce-bus-port 1${port}" >>./${port}/conf/redis.conf
     echo "appendonly yes" >>./${port}/conf/redis.conf
@@ -76,7 +76,7 @@ done
 docker exec -it redis-6601 /bin/bash
 cd /usr/local/bin
 # 建立集群
-redis-cli --cluster create 129.211.32.3:6601 129.211.32.3:6602 129.211.32.3:6603 129.211.32.3:6604 129.211.32.3:6605 129.211.32.3:6606 --cluster-replicas 1
+redis-cli --cluster create 127.0.0.1:6601 127.0.0.1:6602 127.0.0.1:6603 127.0.0.1:6604 127.0.0.1:6605 127.0.0.1:6606 --cluster-replicas 1
 
 ```
 
@@ -139,7 +139,7 @@ docker run \
 docker pull mysql
 
 #启动
-docker run --name mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=123456 -d mysql
+docker run --name mysql -p 3306:3306 -v $PWD/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=123456 -d mysql
 
 #进入容器
 docker exec -it mysql bash
