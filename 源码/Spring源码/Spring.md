@@ -2012,38 +2012,664 @@ protected void registerListeners() {
 
 ```java
 protected void finishBeanFactoryInitialization(ConfigurableListableBeanFactory beanFactory) {
+	// 1. 设置conversionService	
   // Initialize conversion service for this context.
-  if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
-      beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
-    beanFactory.setConversionService(
-      beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
-  }
+		// 初始化容器中的ConversionService 注册名称为：conversionService
+		if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
+				beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
+			beanFactory.setConversionService(
+					beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
+		}
+		
+		// Register a default embedded value resolver if no bean post-processor
+		// (such as a PropertyPlaceholderConfigurer bean) registered any before:
+		// at this point, primarily for resolution in annotation attribute values.
+		// 注册一个默认的内嵌的值处理器
+		// 判断是否存在标签值${..}解析器 主要是对自动注入的属性进行解析
+		if (!beanFactory.hasEmbeddedValueResolver()) {
+			// 添加环境中的值处理器 PropertySourcesPropertyResolver
+			beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
+		}
 
-  // Register a default embedded value resolver if no bean post-processor
-  // (such as a PropertyPlaceholderConfigurer bean) registered any before:
-  // at this point, primarily for resolution in annotation attribute values.
-  // 判断是否存在标签值${..}解析器
-  if (!beanFactory.hasEmbeddedValueResolver()) {
-    beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
-  }
+		// Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
+		// 尽早初始化LoadTimeWeaverAware Bean，以便尽早注册其转换器。和aop切面有关
+		String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
+		for (String weaverAwareName : weaverAwareNames) {
+			getBean(weaverAwareName);
+		}
 
-  // Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
-  // 尽早初始化LoadTimeWeaverAware Bean，以便尽早注册其转换器。
-  String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
-  for (String weaverAwareName : weaverAwareNames) {
-    getBean(weaverAwareName);
-  }
+		// Stop using the temporary ClassLoader for type matching.
+		// 将临时的类加载器清楚
+		beanFactory.setTempClassLoader(null);
 
-  // Stop using the temporary ClassLoader for type matching.
-  beanFactory.setTempClassLoader(null);
+		// Allow for caching all bean definition metadata, not expecting further changes.
+		// 冻结beanDefinition
+		beanFactory.freezeConfiguration();
 
-  // Allow for caching all bean definition metadata, not expecting further changes.
-  // 冻结beanDefinition
-  beanFactory.freezeConfiguration();
+		// Instantiate all remaining (non-lazy-init) singletons.
+		// 初始化剩余的所有非懒加载单例
+		beanFactory.preInstantiateSingletons();
+	}
+```
 
-  // Instantiate all remaining (non-lazy-init) singletons.
-  // 初始化剩余的所有非懒加载单例
-  beanFactory.preInstantiateSingletons();
+##### 3.11.1.设置ConversionService
+
+```java
+// 1. 设置conversionService	
+
+// Initialize conversion service for this context.
+// 初始化容器中的ConversionService 注册名称为：conversionService
+if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
+    beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
+  beanFactory.setConversionService(
+    beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
 }
 ```
+
+conversionService用于针对不同Class之间进行转换。我们在xml中或者在注解中给bean设置property时使用的是string类型，在解析过程中需要将string转换成相应的类型就要使用到ConversionService。
+
+```xml
+<bean name="user" class="com.test.learn.User">
+  <!-- 将字符串"12"转化成int -->
+  <property name="age" value="12"/>
+  <property name="name" value="lisi"/>
+</bean>
+```
+
+
+
+##### 3.11.2.添加内置的占位符解析器（如果容器中不存在的话）
+
+```java
+// 2.添加内置的占位符解析器（如果容器中不存在的话）
+// Register a default embedded value resolver if no bean post-processor
+// (such as a PropertyPlaceholderConfigurer bean) registered any before:
+// at this point, primarily for resolution in annotation attribute values.
+// 注册一个默认的内嵌的值处理器
+// 判断是否存在标签值${..}解析器 主要是对自动注入的属性进行解析
+if (!beanFactory.hasEmbeddedValueResolver()) {
+  // 添加环境中的值处理器 PropertySourcesPropertyResolver
+  beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
+}
+```
+
+如果beanFactory中不存在任何占位符处理器，那么将会添加一个默认的值处理器。使用的是Environment中的占位符解析器。
+
+
+
+##### 3.11.3. 初始化实现了LoadTimeWeaverAware接口的类
+
+```java
+// Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
+// 尽早初始化LoadTimeWeaverAware Bean，以便尽早注册其转换器。和aop切面有关
+String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
+for (String weaverAwareName : weaverAwareNames) {
+   getBean(weaverAwareName);
+}
+```
+
+
+
+##### 3.11.4. 初始化剩余的非懒加载单例对象
+
+```java
+// DefaultListableBeanFactory
+
+@Override
+public void preInstantiateSingletons() throws BeansException {
+  if (logger.isTraceEnabled()) {
+    logger.trace("Pre-instantiating singletons in " + this);
+  }
+
+  // Iterate over a copy to allow for init methods which in turn register new bean definitions.
+  // While this may not be part of the regular factory bootstrap, it does otherwise work fine.
+  // 获取注册的bean名称
+  List<String> beanNames = new ArrayList<>(this.beanDefinitionNames);
+
+  // Trigger initialization of all non-lazy singleton beans...
+  for (String beanName : beanNames) {
+    // 获取合并的BeanDefinition
+    RootBeanDefinition bd = getMergedLocalBeanDefinition(beanName);
+    // 非抽象 单例 非懒加载
+    if (!bd.isAbstract() && bd.isSingleton() && !bd.isLazyInit()) {
+
+      if (isFactoryBean(beanName)) {
+        // bean是FactoryBean 给bean名称加上工厂bean前缀& 并开始创建工厂bean
+        Object bean = getBean(FACTORY_BEAN_PREFIX + beanName);
+        if (bean instanceof FactoryBean) {
+          // 重新检查获取到bean是工厂bean
+          FactoryBean<?> factory = (FactoryBean<?>) bean;
+          boolean isEagerInit;
+          if (System.getSecurityManager() != null && factory instanceof SmartFactoryBean) {
+            // 权限检查
+            isEagerInit = AccessController.doPrivileged(
+              (PrivilegedAction<Boolean>) ((SmartFactoryBean<?>) factory)::isEagerInit,
+              getAccessControlContext());
+          }
+          else {
+            isEagerInit = (factory instanceof SmartFactoryBean &&
+                           ((SmartFactoryBean<?>) factory).isEagerInit());
+          }
+          if (isEagerInit) {
+            // 真正创建bean
+            getBean(beanName);
+          }
+        }
+      }
+      else {
+        // 直接创建 bean
+        getBean(beanName);
+      }
+    }
+  }
+
+  // Trigger post-initialization callback for all applicable beans...
+  for (String beanName : beanNames) {
+    Object singletonInstance = getSingleton(beanName);
+    if (singletonInstance instanceof SmartInitializingSingleton) {
+      SmartInitializingSingleton smartSingleton = (SmartInitializingSingleton) singletonInstance;
+      if (System.getSecurityManager() != null) {
+        AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+          smartSingleton.afterSingletonsInstantiated();
+          return null;
+        }, getAccessControlContext());
+      }
+      else {
+        smartSingleton.afterSingletonsInstantiated();
+      }
+    }
+  }
+}
+```
+
+初始化过程中第一步先获取所有注册的bean名称，然后开始遍历bean名称列表依次调用`getBean`方法进一步开始进入创建过程。
+
+遍历beanName创建bean过程流如下：
+
+![getBean](SpringImage/getBean.png)
+
+###### 4.11.4.1. 获取合并后的BeanDefinition
+
+```java
+protected RootBeanDefinition getMergedLocalBeanDefinition(String beanName) throws BeansException {
+  // Quick check on the concurrent map first, with minimal locking.
+  // 从缓存中获取之前合并好的beanDefinition，在之前的初始化beanFactory后置处理器和初始化Bean后置处理器时会放值
+  RootBeanDefinition mbd = this.mergedBeanDefinitions.get(beanName);
+  if (mbd != null && !mbd.stale) {
+    // 从缓存中命中到并且状态为不需要重新合并
+    return mbd;
+  }
+  // 合并beanDefinition
+  return getMergedBeanDefinition(beanName, getBeanDefinition(beanName));
+}
+
+protected RootBeanDefinition getMergedBeanDefinition(String beanName, BeanDefinition bd)
+			throws BeanDefinitionStoreException {
+
+  return getMergedBeanDefinition(beanName, bd, null);
+}
+
+// 合并BeanDefinition
+protected RootBeanDefinition getMergedBeanDefinition(
+			String beanName, BeanDefinition bd, @Nullable BeanDefinition containingBd)
+			throws BeanDefinitionStoreException {
+
+		synchronized (this.mergedBeanDefinitions) {
+			RootBeanDefinition mbd = null;
+			RootBeanDefinition previous = null;
+
+			// Check with full lock now in order to enforce the same merged instance.
+			// 加锁后重新获取
+			if (containingBd == null) {
+				mbd = this.mergedBeanDefinitions.get(beanName);
+			}
+
+			if (mbd == null || mbd.stale) {
+				previous = mbd;
+				if (bd.getParentName() == null) {
+					// 没有父 beanDefinition
+					// Use copy of given root bean definition.
+					if (bd instanceof RootBeanDefinition) {
+						// RootBeanDefinition 则拷贝一个
+						mbd = ((RootBeanDefinition) bd).cloneBeanDefinition();
+					}
+					else {
+						mbd = new RootBeanDefinition(bd);
+					}
+				}
+				else {
+					// Child bean definition: needs to be merged with parent.
+					BeanDefinition pbd;
+					try {
+						// 获取父beanDefinition的beanName
+						String parentBeanName = transformedBeanName(bd.getParentName());
+						if (!beanName.equals(parentBeanName)) {
+							// 父beanDefinition和beanName不一样 先合并父beanDefinition
+							pbd = getMergedBeanDefinition(parentBeanName);
+						}
+						else {
+							// 子beanDefinition的名称和父BeanDefinition一样使用父beanFactory进行合并操作
+							BeanFactory parent = getParentBeanFactory();
+							if (parent instanceof ConfigurableBeanFactory) {
+								pbd = ((ConfigurableBeanFactory) parent).getMergedBeanDefinition(parentBeanName);
+							}
+							else {
+								throw new NoSuchBeanDefinitionException(parentBeanName,
+										"Parent name '" + parentBeanName + "' is equal to bean name '" + beanName +
+										"': cannot be resolved without a ConfigurableBeanFactory parent");
+							}
+						}
+					}
+					catch (NoSuchBeanDefinitionException ex) {
+						throw new BeanDefinitionStoreException(bd.getResourceDescription(), beanName,
+								"Could not resolve parent bean definition '" + bd.getParentName() + "'", ex);
+					}
+					// Deep copy with overridden values.
+					// 深拷贝父Definition并使用当前的BeanDefinition覆盖父bean定义属性
+					mbd = new RootBeanDefinition(pbd);
+					mbd.overrideFrom(bd);
+				}
+
+				// Set default singleton scope, if not configured before.
+				// 设置默认的 scope属性
+				if (!StringUtils.hasLength(mbd.getScope())) {
+					mbd.setScope(SCOPE_SINGLETON);
+				}
+
+				// A bean contained in a non-singleton bean cannot be a singleton itself.
+				// Let's correct this on the fly here, since this might be the result of
+				// parent-child merging for the outer bean, in which case the original inner bean
+				// definition will not have inherited the merged outer bean's singleton status.
+				// 一个内部单例bean被一个非单例bean包含，那么内部bean不能是单例
+				if (containingBd != null && !containingBd.isSingleton() && mbd.isSingleton()) {
+					mbd.setScope(containingBd.getScope());
+				}
+
+				// Cache the merged bean definition for the time being
+				// (it might still get re-merged later on in order to pick up metadata changes)
+				if (containingBd == null && isCacheBeanMetadata()) {
+					this.mergedBeanDefinitions.put(beanName, mbd);
+				}
+			}
+			if (previous != null) {
+				copyRelevantMergedBeanDefinitionCaches(previous, mbd);
+			}
+			return mbd;
+		}
+	}
+
+```
+
+其过程就是合并父BeanDefinition和当前BeanDefinition属性的过程。先获取父BeanDefinition的属性然后将当前的BeanDefinition属性值对其覆盖。有了最终的BeanDefinition就可以对bean进行初始化了。
+
+###### 4.11.4.2. 获取bean
+
+
+
+```java
+@Override
+public Object getBean(String name) throws BeansException {
+  return doGetBean(name, null, null, false);
+}
+
+protected <T> T doGetBean(
+			String name, @Nullable Class<T> requiredType, @Nullable Object[] args, boolean typeCheckOnly)
+			throws BeansException {
+		// 对bean名称进行转化，因为实现了FactoryBean的类名称是 &factoryBean 还有对别名进行转化
+		String beanName = transformedBeanName(name);
+		Object bean;
+
+		// Eagerly check singleton cache for manually registered singletons.
+		// 检查是否存在手动注册的单例对象
+		Object sharedInstance = getSingleton(beanName);
+		if (sharedInstance != null && args == null) {
+			if (logger.isTraceEnabled()) {
+				if (isSingletonCurrentlyInCreation(beanName)) {
+					logger.trace("Returning eagerly cached instance of singleton bean '" + beanName +
+							"' that is not fully initialized yet - a consequence of a circular reference");
+				}
+				else {
+					logger.trace("Returning cached instance of singleton bean '" + beanName + "'");
+				}
+			}
+			bean = getObjectForBeanInstance(sharedInstance, name, beanName, null);
+		}
+
+		else {
+			// Fail if we're already creating this bean instance:
+			// We're assumably within a circular reference.
+			// 判断原型bean是否存在循环依赖
+			if (isPrototypeCurrentlyInCreation(beanName)) {
+				throw new BeanCurrentlyInCreationException(beanName);
+			}
+
+			// Check if bean definition exists in this factory.
+			// 获取 父 bean工厂
+			BeanFactory parentBeanFactory = getParentBeanFactory();
+			if (parentBeanFactory != null && !containsBeanDefinition(beanName)) {
+				// 父 bean工厂不包含该bean
+				// Not found -> check parent.
+				// 获取原始bean名称
+				String nameToLookup = originalBeanName(name);
+
+				if (parentBeanFactory instanceof AbstractBeanFactory) {
+					// 如果父工厂是AbstractBeanFactory
+					return ((AbstractBeanFactory) parentBeanFactory).doGetBean(
+							nameToLookup, requiredType, args, typeCheckOnly);
+				}
+				else if (args != null) {
+					// Delegation to parent with explicit args.
+					return (T) parentBeanFactory.getBean(nameToLookup, args);
+				}
+				else if (requiredType != null) {
+					// No args -> delegate to standard getBean method.
+					return parentBeanFactory.getBean(nameToLookup, requiredType);
+				}
+				else {
+					return (T) parentBeanFactory.getBean(nameToLookup);
+				}
+			}
+			// 不需要类型转化，标记bean已经创建了
+			if (!typeCheckOnly) {
+				// 标记beanDefinition已经创建并设置BeanDefinition的需要重新merge状态state=true
+				markBeanAsCreated(beanName);
+			}
+
+			try {
+				// 重新 merge beanDefinition
+				RootBeanDefinition mbd = getMergedLocalBeanDefinition(beanName);
+				checkMergedBeanDefinition(mbd, beanName, args);
+
+				// Guarantee initialization of beans that the current bean depends on.
+				// 有依赖项则先创建依赖bean
+				String[] dependsOn = mbd.getDependsOn();
+				if (dependsOn != null) {
+					for (String dep : dependsOn) {
+						// 检查循环依赖
+						if (isDependent(beanName, dep)) {
+							throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+									"Circular depends-on relationship between '" + beanName + "' and '" + dep + "'");
+						}
+						// 注册依赖bean
+						registerDependentBean(dep, beanName);
+						try {
+							getBean(dep);
+						}
+						catch (NoSuchBeanDefinitionException ex) {
+							throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+									"'" + beanName + "' depends on missing bean '" + dep + "'", ex);
+						}
+					}
+				}
+
+				// Create bean instance.
+				if (mbd.isSingleton()) {
+					// 创建出bean
+					sharedInstance = getSingleton(beanName, () -> {
+						try {
+							return createBean(beanName, mbd, args);
+						}
+						catch (BeansException ex) {
+							// Explicitly remove instance from singleton cache: It might have been put there
+							// eagerly by the creation process, to allow for circular reference resolution.
+							// Also remove any beans that received a temporary reference to the bean.
+							destroySingleton(beanName);
+							throw ex;
+						}
+					});
+					// 如果bean是factoryBean则返回创建出的对象
+					bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
+				}
+
+				else if (mbd.isPrototype()) {
+					// It's a prototype -> create a new instance.
+					Object prototypeInstance = null;
+					try {
+						beforePrototypeCreation(beanName);
+						prototypeInstance = createBean(beanName, mbd, args);
+					}
+					finally {
+						afterPrototypeCreation(beanName);
+					}
+					bean = getObjectForBeanInstance(prototypeInstance, name, beanName, mbd);
+				}
+
+				else {
+					String scopeName = mbd.getScope();
+					if (!StringUtils.hasLength(scopeName)) {
+						throw new IllegalStateException("No scope name defined for bean ´" + beanName + "'");
+					}
+					Scope scope = this.scopes.get(scopeName);
+					if (scope == null) {
+						throw new IllegalStateException("No Scope registered for scope name '" + scopeName + "'");
+					}
+					try {
+						Object scopedInstance = scope.get(beanName, () -> {
+							beforePrototypeCreation(beanName);
+							try {
+								return createBean(beanName, mbd, args);
+							}
+							finally {
+								afterPrototypeCreation(beanName);
+							}
+						});
+						bean = getObjectForBeanInstance(scopedInstance, name, beanName, mbd);
+					}
+					catch (IllegalStateException ex) {
+						throw new BeanCreationException(beanName,
+								"Scope '" + scopeName + "' is not active for the current thread; consider " +
+								"defining a scoped proxy for this bean if you intend to refer to it from a singleton",
+								ex);
+					}
+				}
+			}
+			catch (BeansException ex) {
+				cleanupAfterBeanCreationFailure(beanName);
+				throw ex;
+			}
+		}
+
+		// Check if required type matches the type of the actual bean instance.
+		// 如果创建出的对象不是目标对象，则使用ConverterService进行类型转换
+		if (requiredType != null && !requiredType.isInstance(bean)) {
+			try {
+				T convertedBean = getTypeConverter().convertIfNecessary(bean, requiredType);
+				if (convertedBean == null) {
+					throw new BeanNotOfRequiredTypeException(name, requiredType, bean.getClass());
+				}
+				return convertedBean;
+			}
+			catch (TypeMismatchException ex) {
+				if (logger.isTraceEnabled()) {
+					logger.trace("Failed to convert bean '" + name + "' to required type '" +
+							ClassUtils.getQualifiedName(requiredType) + "'", ex);
+				}
+				throw new BeanNotOfRequiredTypeException(name, requiredType, bean.getClass());
+			}
+		}
+		return (T) bean;
+	}
+```
+
+`getBean`方法流程图如下：
+
+从单例缓存中获取实例。
+
+1.1. 获取成功，则通过`getObjectForBeanInstance`方法判断是否是`FactoryBean`然后通过判断`beanName`是否包含`&`标识来决定是返回当前的FactoryBean`还是通过其创建出新的bean实例。
+
+1.2. 获取失败，在`beanFactory`中递归查找bean的定义信息`BaenDefinition`，然后通过`createBean`创建实例，然后走`1.1`的逻辑
+
+最后通过ConvertService对实例进行类型转换，返回需要的bean类型。
+
+
+
+
+![image-20201228161623164](/Users/sharelin/Documents/moyu/源码/Spring源码/SpringImage/getBean流程图.jpg)
+
+###### 4.11.4.3. 创建bean
+
+```java
+Override
+  protected Object createBean(String beanName, RootBeanDefinition mbd, @Nullable Object[] args)
+  throws BeanCreationException {
+
+  if (logger.isTraceEnabled()) {
+    logger.trace("Creating instance of bean '" + beanName + "'");
+  }
+  RootBeanDefinition mbdToUse = mbd;
+
+  // Make sure bean class is actually resolved at this point, and
+  // clone the bean definition in case of a dynamically resolved Class
+  // which cannot be stored in the shared merged bean definition.
+  Class<?> resolvedClass = resolveBeanClass(mbd, beanName);
+  if (resolvedClass != null && !mbd.hasBeanClass() && mbd.getBeanClassName() != null) {
+    mbdToUse = new RootBeanDefinition(mbd);
+    mbdToUse.setBeanClass(resolvedClass);
+  }
+
+  // Prepare method overrides.
+  try {
+    mbdToUse.prepareMethodOverrides();
+  }
+  catch (BeanDefinitionValidationException ex) {
+    throw new BeanDefinitionStoreException(mbdToUse.getResourceDescription(),
+                                           beanName, "Validation of method overrides failed", ex);
+  }
+
+  try {
+    // Give BeanPostProcessors a chance to return a proxy instead of the target bean instance.
+    // 给 beanPostProcessor一个机会返回一个代理对象来代替bean
+    Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+    if (bean != null) {
+      return bean;
+    }
+  }
+  catch (Throwable ex) {
+    throw new BeanCreationException(mbdToUse.getResourceDescription(), beanName,
+                                    "BeanPostProcessor before instantiation of bean failed", ex);
+  }
+
+  try {
+    Object beanInstance = doCreateBean(beanName, mbdToUse, args);
+    if (logger.isTraceEnabled()) {
+      logger.trace("Finished creating instance of bean '" + beanName + "'");
+    }
+    return beanInstance;
+  }
+  catch (BeanCreationException | ImplicitlyAppearedSingletonException ex) {
+    // A previously detected exception with proper bean creation context already,
+    // or illegal singleton state to be communicated up to DefaultSingletonBeanRegistry.
+    throw ex;
+  }
+  catch (Throwable ex) {
+    throw new BeanCreationException(
+      mbdToUse.getResourceDescription(), beanName, "Unexpected exception during bean creation", ex);
+  }
+}
+
+protected Object doCreateBean(String beanName, RootBeanDefinition mbd, @Nullable Object[] args)
+			throws BeanCreationException {
+
+		// Instantiate the bean.
+		BeanWrapper instanceWrapper = null;
+		if (mbd.isSingleton()) {
+			// 获取工厂bean
+			instanceWrapper = this.factoryBeanInstanceCache.remove(beanName);
+		}
+		if (instanceWrapper == null) {
+			// 没有工厂bean 创建一个
+			instanceWrapper = createBeanInstance(beanName, mbd, args);
+		}
+		Object bean = instanceWrapper.getWrappedInstance();
+		Class<?> beanType = instanceWrapper.getWrappedClass();
+		if (beanType != NullBean.class) {
+			mbd.resolvedTargetType = beanType;
+		}
+
+		// Allow post-processors to modify the merged bean definition.
+		synchronized (mbd.postProcessingLock) {
+			if (!mbd.postProcessed) {
+				try {
+					// 对 merged bean definition进行修改 MergedBeanDefinitionPostProcessor的postProcessMergedBeanDefinition方法
+					applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName);
+				}
+				catch (Throwable ex) {
+					throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+							"Post-processing of merged bean definition failed", ex);
+				}
+				mbd.postProcessed = true;
+			}
+		}
+
+		// Eagerly cache singletons to be able to resolve circular references
+		// even when triggered by lifecycle interfaces like BeanFactoryAware.
+		boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences &&
+				isSingletonCurrentlyInCreation(beanName));
+		if (earlySingletonExposure) {
+			if (logger.isTraceEnabled()) {
+				logger.trace("Eagerly caching bean '" + beanName +
+						"' to allow for resolving potential circular references");
+			}
+			// 加入第三级缓存，不管以后用不用
+			addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
+		}
+
+		// Initialize the bean instance.
+		Object exposedObject = bean;
+		try {
+			// 给属性赋值
+			populateBean(beanName, mbd, instanceWrapper);
+			exposedObject = initializeBean(beanName, exposedObject, mbd);
+		}
+		catch (Throwable ex) {
+			if (ex instanceof BeanCreationException && beanName.equals(((BeanCreationException) ex).getBeanName())) {
+				throw (BeanCreationException) ex;
+			}
+			else {
+				throw new BeanCreationException(
+						mbd.getResourceDescription(), beanName, "Initialization of bean failed", ex);
+			}
+		}
+
+		if (earlySingletonExposure) {
+			Object earlySingletonReference = getSingleton(beanName, false);
+			if (earlySingletonReference != null) {
+				if (exposedObject == bean) {
+					exposedObject = earlySingletonReference;
+				}
+				else if (!this.allowRawInjectionDespiteWrapping && hasDependentBean(beanName)) {
+					String[] dependentBeans = getDependentBeans(beanName);
+					Set<String> actualDependentBeans = new LinkedHashSet<>(dependentBeans.length);
+					for (String dependentBean : dependentBeans) {
+						if (!removeSingletonIfCreatedForTypeCheckOnly(dependentBean)) {
+							actualDependentBeans.add(dependentBean);
+						}
+					}
+					if (!actualDependentBeans.isEmpty()) {
+						throw new BeanCurrentlyInCreationException(beanName,
+								"Bean with name '" + beanName + "' has been injected into other beans [" +
+								StringUtils.collectionToCommaDelimitedString(actualDependentBeans) +
+								"] in its raw version as part of a circular reference, but has eventually been " +
+								"wrapped. This means that said other beans do not use the final version of the " +
+								"bean. This is often the result of over-eager type matching - consider using " +
+								"'getBeanNamesForType' with the 'allowEagerInit' flag turned off, for example.");
+					}
+				}
+			}
+		}
+
+		// Register bean as disposable.
+		try {
+			registerDisposableBeanIfNecessary(beanName, bean, mbd);
+		}
+		catch (BeanDefinitionValidationException ex) {
+			throw new BeanCreationException(
+					mbd.getResourceDescription(), beanName, "Invalid destruction signature", ex);
+		}
+
+		return exposedObject;
+	}
+```
+
+![createBean流程图](SpringImage/createBean流程图.jpg)
 
