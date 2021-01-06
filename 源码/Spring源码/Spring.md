@@ -2188,7 +2188,7 @@ public void preInstantiateSingletons() throws BeansException {
 
 ![getBean](SpringImage/getBean.png)
 
-###### 4.11.4.1. 获取合并后的BeanDefinition
+###### 3.11.4.1. 获取合并后的BeanDefinition
 
 ```java
 protected RootBeanDefinition getMergedLocalBeanDefinition(String beanName) throws BeansException {
@@ -2302,7 +2302,7 @@ protected RootBeanDefinition getMergedBeanDefinition(
 
 其过程就是合并父BeanDefinition和当前BeanDefinition属性的过程。先获取父BeanDefinition的属性然后将当前的BeanDefinition属性值对其覆盖。有了最终的BeanDefinition就可以对bean进行初始化了。
 
-###### 4.11.4.2. 获取bean
+###### 3.11.4.2. 获取bean
 
 
 
@@ -2504,9 +2504,9 @@ protected <T> T doGetBean(
 
 
 
-![image-20201228161623164](/Users/sharelin/Documents/moyu/源码/Spring源码/SpringImage/getBean流程图.jpg)
+![image-20201228161623164](SpringImage/getBean流程图.jpg)
 
-###### 4.11.4.3. 创建bean
+###### 3.11.4.3. 创建bean
 
 ```java
 Override
