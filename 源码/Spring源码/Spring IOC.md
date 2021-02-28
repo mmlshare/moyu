@@ -384,7 +384,7 @@ public AbstractAutowireCapableBeanFactory() {
 
 可重写该方法，对bean工厂作更多的客户化设置。
 
-```
+```java
 protected void customizeBeanFactory(DefaultListableBeanFactory beanFactory) {
 		//是否允许 bean定义重写
 		if (this.allowBeanDefinitionOverriding != null) {

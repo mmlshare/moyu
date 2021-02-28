@@ -139,7 +139,7 @@ docker run \
 docker pull mysql
 
 #启动
-docker run --name mysql -p 3306:3306 -v $PWD/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=123456 -d mysql
+docker run --name mysql -p 3306:3306 -v $PWD/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=123456 -d mysql -e "TZ=Asia/Shanghai"
 
 #进入容器
 docker exec -it mysql bash
@@ -196,5 +196,9 @@ docker images
 
 #日志查看
 docker logs [id]
+
+#修改时区
+sudo rm -f /etc/localtime
+sudo ln -s /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 ```
 

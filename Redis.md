@@ -671,3 +671,180 @@
 - BITPOS key bit [start] [end]
 
   返回位图中第一个值为 `bit` 的二进制位的位置。
+
+
+
+## 3. Redis常见问题
+
+### 3.1. 缓存穿透
+
+场景：缓存穿透是指大量的请求redis不存在的key数据，导致请求都打到数据库。
+
+解决方案：
+
+1. 通过请求参数校验，过滤无效的请求，这种办法效果一般。
+2. 对缓存中和数据库都查不到的数据，在redis中设置一个标记，下次查询直接返回查询失败。最好给这个临时标记设置一个过期时间，避免redis中存在大量无效的key。
+3. 使用布隆过滤器，将可能存在的数据存到一个bitmap中以拦截非法的请求。
+
+### 3.2. 缓存击穿
+
+场景：类似于缓存穿透，针对某些热点数据失效后未及时缓存，导致请求打在数据库上。
+
+解决方案：
+
+1. 对热点的数据设置不过期。
+2. 加互斥锁，使请求串行，让过得锁的线程去读取数据库并更新缓存。
+
+### 3.2. 缓存雪崩
+
+场景：在短时间内，大量的key失效，导致所有请求都到了数据库。
+
+解决方案：
+
+1. 给缓存设置不同的失效时间，避免同时失效。
+2. 双缓存。
+
+## 4. 慢查询
+
+### 4.1. 配置
+
+```properties
+# redis.conf 配置文件
+# 慢查询时间 微秒
+slowlog-log-slower-than=1000
+# 最多保存多少条慢查询记录
+slowlog-max-len=1000
+```
+
+还可通过`CONFIG SET` 命令对它们动态地进行修改
+
+```shell
+CONFIG SET slowlog-log-slower-than 1000
+CONFIG SET slowlog-max-len 1000
+```
+
+### 4.2. 查看记录
+
+```shell
+SLOWLOG GET [Num]
+```
+
+```shell
+127.0.0.1:6606> slowlog get 10
+1) 1) (integer) 1              
+   2) (integer) 1611998575
+   3) (integer) 1187
+   4) 1) "COMMAND"
+   5) "127.0.0.1:46674"
+   6) ""
+2) 1) (integer) 0                   # 日志标识符
+   2) (integer) 1611997991          # 执行时间点 UNIX时间戳
+   3) (integer) 109                 # 执行时间
+   4) 1) "CONFIG"                   # 命令
+      2) "SET"
+      3) "slowlog-log-slower-than"
+      4) "100"
+   5) "127.0.0.1:46672"
+   6) ""
+```
+
+## 5.性能测试
+
+```shell
+# redis-benchmark -help
+Invalid option "-help" or option argument missing
+
+Usage: redis-benchmark [-h <host>] [-p <port>] [-c <clients>] [-n <requests>] [-k <boolean>]
+
+ -h <hostname>      Server hostname (default 127.0.0.1)
+ -p <port>          Server port (default 6379)
+ -s <socket>        Server socket (overrides host and port)
+ -a <password>      Password for Redis Auth
+ -c <clients>       Number of parallel connections (default 50)
+ -n <requests>      Total number of requests (default 100000)
+ -d <size>          Data size of SET/GET value in bytes (default 3)
+ --dbnum <db>       SELECT the specified db number (default 0)
+ -k <boolean>       1=keep alive 0=reconnect (default 1)
+ -r <keyspacelen>   Use random keys for SET/GET/INCR, random values for SADD
+  Using this option the benchmark will expand the string __rand_int__
+  inside an argument with a 12 digits number in the specified range
+  from 0 to keyspacelen-1. The substitution changes every time a command
+  is executed. Default tests use this to hit random keys in the
+  specified range.
+ -P <numreq>        Pipeline <numreq> requests. Default 1 (no pipeline).
+ -e                 If server replies with errors, show them on stdout.
+                    (no more than 1 error per second is displayed)
+ -q                 Quiet. Just show query/sec values
+ --csv              Output in CSV format
+ -l                 Loop. Run the tests forever
+ -t <tests>         Only run the comma separated list of tests. The test
+                    names are the same as the ones produced as output.
+ -I                 Idle mode. Just open N idle connections and wait.
+
+Examples:
+
+ Run the benchmark with the default configuration against 127.0.0.1:6379:
+   $ redis-benchmark
+
+ Use 20 parallel clients, for a total of 100k requests, against 192.168.1.1:
+   $ redis-benchmark -h 192.168.1.1 -p 6379 -n 100000 -c 20
+
+ Fill 127.0.0.1:6379 with about 1 million keys only using the SET test:
+   $ redis-benchmark -t set -n 1000000 -r 100000000
+
+ Benchmark 127.0.0.1:6379 for a few commands producing CSV output:
+   $ redis-benchmark -t ping,set,get -n 100000 --csv
+
+ Benchmark a specific command line:
+   $ redis-benchmark -r 10000 -n 10000 eval 'return redis.call("ping")' 0
+
+ Fill a list with 10000 random elements:
+   $ redis-benchmark -r 10000 -n 10000 lpush mylist __rand_int__
+
+ On user specified command lines __rand_int__ is replaced with a random integer
+ with a range of values selected by the -r option.
+```
+
+## 6. Redis调优
+
+### 6.1. linux配置
+
+- 修改内存分配策略 vm.overcommit_memory 
+
+  **redis在备份数据的时候，会fork出一个子进程，理论上child进程所占用的内存和parent是一样的，比如parent占用的内存为8G，这个时候也要同样分配8G的内存给child,如果内存无法负担，往往会造成redis服务器的down机或者IO负载过高，效率下降**。所以内存分配策略应该设置为 1（表示内核允许分配所有的物理内存，而不管当前的内存状态如何）。
+  内存分配策略有三种
+  可选值：0、1、2。
+  0， 表示内核将检查是否有足够的可用内存供应用进程使用；如果有足够的可用内存，内存申请允许；否则，内存申请失败，并把错误返回给应用进程。
+  1， 不管需要多少内存，都允许申请。
+  2， 只允许分配物理内存和交换内存的大小(交换内存一般是物理内存的一半)。
+
+- 关闭Transparent Huge Pages(THP)
+
+  Redis 建议修改 Transparent Huge Pages（THP）的相关配置，Linux kernel 在2.6.38内核增加了 THP 特性，支持大内存页（2MB）分配，默认开启。当开启 时可以降低 fork 子进程的速度，但 fork 操作之后，每个内存页从原来 4KB 变为 2MB，会大幅增加重写期间父进程内存消耗。同时每次写命令引起的复制内 存页单位放大了512倍，会拖慢写操作的执行时间，导致大量写操作慢查询，例如简单的 incr 命令也会出现在慢查询中。因此 Redis 日志中建议将此特性进 行禁用，禁用方法如下:
+
+   ` echo never > /sys/kernel/mm/transparent_hugepage/enabled`
+
+  为使机器重启后THP配置依然生效，可以在/etc/rc.local 中追加`echo never>/sys/kernel/mm/transparent_hugepage/enabled`
+
+- swappiness
+
+  swap 对于操作系统来比较重要，当物理内存不足时，可以将一部分内存页进行 swap 操作，已解燃眉之急。swap 空间由硬盘提供，对于需要高并发、 高吞吐的应用来说，磁盘 IO 通常会成为系统瓶颈。在 Linux 中，并不是要等到所有物理内存都使用完才会使用到 swap，系统参数 swppiness 会决定操 作系统使用 swap 的倾向程度。swappiness 的取值范围是0~100，swappiness 的值越大，说明操作系统可能使用swap的概率越高，swappiness 值越 低，表示操作系统更加倾向于使用物理内存。swap 的默认值是60，了解这个值的含义后，有利于 Redis 的性能优化。下表对 swappiness 的重要值进行了说明。
+
+  ![image-20210202171511976](images/image-20210202171511976.png)
+
+  OOM（Out Of Memory）killer 机制是指 Linux 操作系统发现可用内存不足时，强制杀死一些用户进程（非内核进程），来保证系统有足够的可用内存 进行分配。 为使配置在重启 Linux 操作系统后立即生效，只需要在/etc/sysctl.conf 追加 vm.swappiness={bestvalue}即可 echo vm.swappiness={bestvalue} >> /etc/sysctl.conf
+
+- ulimit设置
+
+  可以通过 ulimit 查看和设置系统当前用户进程的资源数。其中 ulimit-a 命令包含的 open files 参数，是单个用户同时打开的最大文件个数 。
+
+  `ulimit –Sn {max-open-files}`
+
+### 6.2. Redis配置
+
+- 设置maxmemory。设置Redis使用的最大物理内存，即Redis在占用maxmemory大小的内存之后就开始拒绝后续的写入请求，该参数可以确保Redis因为使用 了大量内存严重影响速度或者发生OOM(out-of-memory，发现内存不足时，它会选择杀死一些进程(用户态进程，不是内核线程)，以便释放内存)。此外， 可以使用info命令查看Redis占用的内存及其它信息。
+
+- 检查数据持久化策略 数据落磁盘尽可能减少性能损坏，以空间换时间。设置如下命令：
+  - rdbcompression no : 默认值是yes。对于存储到磁盘中的快照，可以设置是否进行压缩存储。如果是的话，redis会采用LZF算法进行压缩。如果你不想 消耗CPU来进行压缩的话，可以设置为关闭此功能，但是存储在磁盘上的快照会比较大。
+  - rdbchecksum no : 默认值是yes。在存储快照后，我们还可以让redis使用CRC64算法来进行数据校验，但是这样做会增加大约10%的性能消耗，如果希 望获取到最大的性能提升，可以关闭此功能。
+  - 优化AOF和RDB，减少占用CPU时间 主库可以不进行dump操作或者降低dump频率。 取消AOF持久化。命令如下: appendonly no
